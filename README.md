@@ -1,6 +1,6 @@
 # Sapphire Reserve ROI Calculator
 
-A modern, minimalist calculator to analyze whether the Chase Sapphire Reserve credit card annual fee is worth it based on your personal spending patterns and benefit usage.
+A calculator to analyze whether the Chase Sapphire Reserve credit card annual fee is worth it based on your personal spending and benefit usage.
 
 ## Features
 
