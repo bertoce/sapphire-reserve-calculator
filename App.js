@@ -1,5 +1,52 @@
-import React, { useState, useEffect } from 'react';
-import { Calculator, DollarSign, Plane, Car } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+// PERFORMANCE OPTIMIZATION: Static constants outside component
+const STATIC_STYLES = {
+  fontFamily: 'Futura, "Trebuchet MS", Arial, sans-serif',
+  borderRadius32: '32px',
+  borderRadius24: '24px'
+};
+
+const POINT_VALUES = {
+  min: 0.015,
+  max: 0.020,
+  avg: 0.0175
+};
+
+const MULTIPLIERS = {
+  chaseTravel: 8,
+  flightsHotels: 4,
+  dining: 3,
+  otherSpending: 1
+};
+
+// REACT COMPATIBILITY: Validation helper functions
+const validateInputs = (inputs) => {
+  if (!inputs || typeof inputs !== 'object') {
+    throw new Error('Invalid inputs: must be an object');
+  }
+  
+  const safe = {};
+  Object.keys(inputs).forEach(key => {
+    const value = inputs[key];
+    if (typeof value === 'number') {
+      safe[key] = isNaN(value) || !isFinite(value) ? 0 : value;
+    } else if (typeof value === 'boolean') {
+      safe[key] = value;
+    } else {
+      safe[key] = 0;
+    }
+  });
+  
+  return safe;
+};
+
+const isValidResults = (results) => {
+  if (!results || typeof results !== 'object') return false;
+  
+  const requiredKeys = ['totalValue', 'totalCost', 'roi', 'minROI', 'maxROI', 'breakdown'];
+  return requiredKeys.every(key => key in results);
+};
 
 const SapphireReserveROICalculator = () => {
   const [inputs, setInputs] = useState({
@@ -35,499 +82,622 @@ const SapphireReserveROICalculator = () => {
     breakdown: {}
   });
 
-  const totalAnnualSpending = inputs.chaseTravel + inputs.flightsHotels + inputs.dining + inputs.otherSpending;
-  const qualifiesForHighSpender = totalAnnualSpending >= 75000;
+  // PERFORMANCE + REACT COMPATIBILITY: Memoized calculations
+  const totalAnnualSpending = useMemo(() => {
+    try {
+      const total = inputs.chaseTravel + inputs.flightsHotels + inputs.dining + inputs.otherSpending;
+      return isNaN(total) ? 0 : total;
+    } catch (error) {
+      console.error('Error calculating total spending:', error);
+      return 0;
+    }
+  }, [inputs.chaseTravel, inputs.flightsHotels, inputs.dining, inputs.otherSpending]);
 
-  const calculateROI = () => {
-    let totalValue = 0;
-    let minValue = 0;
-    let maxValue = 0;
-    let breakdown = {};
+  const qualifiesForHighSpender = useMemo(() => 
+    totalAnnualSpending >= 75000,
+    [totalAnnualSpending]
+  );
 
-    const pointValueMin = 0.015;
-    const pointValueMax = 0.020;
-    const pointValueAvg = 0.0175;
+  // CRITICAL FIX + PERFORMANCE + REACT COMPATIBILITY: Pure, stable calculateROI
+  const calculateROI = useCallback(() => {
+    try {
+      const safeInputs = validateInputs(inputs);
+      
+      let totalValue = 0;
+      let minValue = 0;
+      let maxValue = 0;
+      let breakdown = {};
 
-    const totalPoints = (inputs.chaseTravel * 8) + (inputs.flightsHotels * 4) + (inputs.dining * 3) + (inputs.otherSpending * 1);
-    const pointsValue = totalPoints * pointValueAvg;
+      const totalPoints = (safeInputs.chaseTravel * MULTIPLIERS.chaseTravel) + 
+                         (safeInputs.flightsHotels * MULTIPLIERS.flightsHotels) + 
+                         (safeInputs.dining * MULTIPLIERS.dining) + 
+                         (safeInputs.otherSpending * MULTIPLIERS.otherSpending);
+      
+      if (isNaN(totalPoints) || !isFinite(totalPoints)) {
+        throw new Error('Invalid points calculation');
+      }
 
-    breakdown.points = {
-      value: pointsValue,
-      min: totalPoints * pointValueMin,
-      max: totalPoints * pointValueMax,
-      details: totalPoints.toLocaleString() + ' points earned'
-    };
+      const pointsValue = totalPoints * POINT_VALUES.avg;
 
-    const travelCredit = Math.min(inputs.travelCreditUsage, 300);
-    breakdown.travelCredit = {
-      value: travelCredit,
-      min: travelCredit,
-      max: travelCredit,
-      details: '$' + travelCredit + ' travel credit used'
-    };
+      breakdown.points = {
+        value: pointsValue,
+        min: totalPoints * POINT_VALUES.min,
+        max: totalPoints * POINT_VALUES.max,
+        details: totalPoints.toLocaleString() + ' points earned'
+      };
 
-    const diningCreditValue = Math.min(inputs.diningCredit, 300);
-    breakdown.diningCredit = {
-      value: diningCreditValue,
-      min: diningCreditValue,
-      max: diningCreditValue,
-      details: '$' + diningCreditValue + ' annual dining credit'
-    };
+      const travelCredit = Math.min(Math.max(safeInputs.travelCreditUsage || 0, 0), 300);
+      breakdown.travelCredit = {
+        value: travelCredit,
+        min: travelCredit,
+        max: travelCredit,
+        details: '$' + travelCredit + ' travel credit used'
+      };
 
-    const editCredit = Math.min(inputs.editStaysValue, 500);
-    if (editCredit > 0) {
-      breakdown.editCredit = {
-        value: editCredit,
-        min: editCredit,
-        max: editCredit,
-        details: '$' + editCredit + ' Edit stays credit'
+      const diningCreditValue = Math.min(Math.max(safeInputs.diningCredit || 0, 0), 300);
+      breakdown.diningCredit = {
+        value: diningCreditValue,
+        min: diningCreditValue,
+        max: diningCreditValue,
+        details: '$' + diningCreditValue + ' annual dining credit'
+      };
+
+      const editCredit = Math.min(Math.max(safeInputs.editStaysValue || 0, 0), 500);
+      if (editCredit > 0) {
+        breakdown.editCredit = {
+          value: editCredit,
+          min: editCredit,
+          max: editCredit,
+          details: '$' + editCredit + ' Edit stays credit'
+        };
+      }
+
+      const stubhubCredit = Math.min(Math.max(safeInputs.stubhubSpending || 0, 0), 300);
+      if (stubhubCredit > 0) {
+        breakdown.stubhubCredit = {
+          value: stubhubCredit,
+          min: stubhubCredit,
+          max: stubhubCredit,
+          details: '$' + stubhubCredit + ' StubHub credit'
+        };
+      }
+
+      const dashpassValue = (safeInputs.dashpassUsage || 0) * 9.99;
+      if (dashpassValue > 0) {
+        breakdown.dashpass = {
+          value: dashpassValue,
+          min: dashpassValue * 0.5,
+          max: dashpassValue,
+          details: (safeInputs.dashpassUsage || 0) + ' months of DashPass'
+        };
+      }
+
+      const restaurantCredits = (safeInputs.restaurantOrders ? 1 : 0) * 5 * 12;
+      const nonRestaurantCredits = (safeInputs.nonRestaurantOrders ? 2 : 0) * 10 * 12;
+      const totalDoorDashCredits = restaurantCredits + nonRestaurantCredits;
+      if (totalDoorDashCredits > 0) {
+        breakdown.doorDashCredits = {
+          value: totalDoorDashCredits,
+          min: totalDoorDashCredits * 0.7,
+          max: totalDoorDashCredits,
+          details: 'DoorDash credits: $' + totalDoorDashCredits + '/year'
+        };
+      }
+
+      const lyftCredits = Math.min((safeInputs.lyftRides || 0) * 10, 120);
+      const lyftBonusPoints = (safeInputs.lyftRides || 0) * 20 * 4;
+      const lyftTotal = lyftCredits + (lyftBonusPoints * POINT_VALUES.avg);
+      if (lyftTotal > 0) {
+        breakdown.lyft = {
+          value: lyftTotal,
+          min: lyftCredits + (lyftBonusPoints * POINT_VALUES.min),
+          max: lyftCredits + (lyftBonusPoints * POINT_VALUES.max),
+          details: 'Lyft credits and bonus points'
+        };
+      }
+
+      let pelotonValue = 0;
+      if (safeInputs.pelotonMembership) {
+        pelotonValue += 120;
+      }
+      if (safeInputs.pelotonEquipment > 0) {
+        const bonusPoints = Math.min(safeInputs.pelotonEquipment, 5000) * 9;
+        pelotonValue += bonusPoints * POINT_VALUES.avg;
+      }
+      if (pelotonValue > 0) {
+        breakdown.peloton = {
+          value: pelotonValue,
+          min: pelotonValue * 0.8,
+          max: pelotonValue * 1.2,
+          details: 'Peloton benefits'
+        };
+      }
+
+      const priorityPassValue = (safeInputs.priorityPassVisits || 0) * 35;
+      if (priorityPassValue > 0) {
+        breakdown.priorityPass = {
+          value: priorityPassValue,
+          min: priorityPassValue * 0.5,
+          max: priorityPassValue * 1.5,
+          details: (safeInputs.priorityPassVisits || 0) + ' lounge visits'
+        };
+      }
+
+      const globalEntryValue = safeInputs.globalEntryValue ? 24 : 0;
+      if (globalEntryValue > 0) {
+        breakdown.globalEntry = {
+          value: globalEntryValue,
+          min: globalEntryValue,
+          max: globalEntryValue,
+          details: 'Global Entry credit ($120 every 5 years)'
+        };
+      }
+
+      const appleServicesValue = safeInputs.appleServices ? (6.99 + 10.99) * 12 : 0;
+      if (appleServicesValue > 0) {
+        breakdown.appleServices = {
+          value: appleServicesValue,
+          min: appleServicesValue * 0.3,
+          max: appleServicesValue,
+          details: 'Apple TV+ and Apple Music'
+        };
+      }
+
+      let highSpenderValue = 0;
+      if (qualifiesForHighSpender) {
+        if (safeInputs.useShopsCredit) highSpenderValue += 250;
+        if (safeInputs.useSouthwestCredit) highSpenderValue += 500;
+        if (safeInputs.useIHGDiamond) highSpenderValue += 200;
+        if (safeInputs.useSouthwestAList) highSpenderValue += 150;
+      }
+      
+      if (highSpenderValue > 0) {
+        breakdown.highSpender = {
+          value: highSpenderValue,
+          min: highSpenderValue * 0.8,
+          max: highSpenderValue * 1.2,
+          details: 'High spender benefits: $' + highSpenderValue + ' selected'
+        };
+      }
+
+      const benefitValues = Object.values(breakdown);
+      totalValue = benefitValues.reduce((sum, benefit) => {
+        const value = benefit?.value || 0;
+        return sum + (isNaN(value) ? 0 : value);
+      }, 0);
+      
+      minValue = benefitValues.reduce((sum, benefit) => {
+        const value = benefit?.min || 0;
+        return sum + (isNaN(value) ? 0 : value);
+      }, 0);
+      
+      maxValue = benefitValues.reduce((sum, benefit) => {
+        const value = benefit?.max || 0;
+        return sum + (isNaN(value) ? 0 : value);
+      }, 0);
+
+      const roi = totalValue > 0 ? ((totalValue - 795) / 795) * 100 : -100;
+      const minROI = minValue > 0 ? ((minValue - 795) / 795) * 100 : -100;
+      const maxROI = maxValue > 0 ? ((maxValue - 795) / 795) * 100 : -100;
+
+      const results = {
+        totalValue: isNaN(totalValue) ? 0 : totalValue,
+        totalCost: 795,
+        roi: isNaN(roi) ? -100 : roi,
+        minROI: isNaN(minROI) ? -100 : minROI,
+        maxROI: isNaN(maxROI) ? -100 : maxROI,
+        breakdown
+      };
+
+      if (!isValidResults(results)) {
+        throw new Error('Invalid calculation results structure');
+      }
+
+      return results;
+      
+    } catch (error) {
+      console.error('ROI calculation error:', error);
+      return {
+        totalValue: 0,
+        totalCost: 795,
+        roi: -100,
+        minROI: -100,
+        maxROI: -100,
+        breakdown: {}
       };
     }
+  }, [inputs, qualifiesForHighSpender]);
 
-    const stubhubCredit = Math.min(inputs.stubhubSpending, 300);
-    if (stubhubCredit > 0) {
-      breakdown.stubhubCredit = {
-        value: stubhubCredit,
-        min: stubhubCredit,
-        max: stubhubCredit,
-        details: '$' + stubhubCredit + ' StubHub credit'
-      };
-    }
-
-    const dashpassValue = inputs.dashpassUsage * 9.99;
-    if (dashpassValue > 0) {
-      breakdown.dashpass = {
-        value: dashpassValue,
-        min: dashpassValue * 0.5,
-        max: dashpassValue,
-        details: inputs.dashpassUsage + ' months of DashPass'
-      };
-    }
-
-    const restaurantCredits = (inputs.restaurantOrders ? 1 : 0) * 5 * 12;
-    const nonRestaurantCredits = (inputs.nonRestaurantOrders ? 2 : 0) * 10 * 12;
-    const totalDoorDashCredits = restaurantCredits + nonRestaurantCredits;
-    if (totalDoorDashCredits > 0) {
-      breakdown.doorDashCredits = {
-        value: totalDoorDashCredits,
-        min: totalDoorDashCredits * 0.7,
-        max: totalDoorDashCredits,
-        details: 'DoorDash credits: $' + totalDoorDashCredits + '/year'
-      };
-    }
-
-    const lyftCredits = Math.min(inputs.lyftRides * 10, 120);
-    const lyftBonusPoints = inputs.lyftRides * 20 * 4;
-    const lyftTotal = lyftCredits + (lyftBonusPoints * pointValueAvg);
-    if (lyftTotal > 0) {
-      breakdown.lyft = {
-        value: lyftTotal,
-        min: lyftCredits + (lyftBonusPoints * pointValueMin),
-        max: lyftCredits + (lyftBonusPoints * pointValueMax),
-        details: 'Lyft credits and bonus points'
-      };
-    }
-
-    let pelotonValue = 0;
-    if (inputs.pelotonMembership) {
-      pelotonValue += 120;
-    }
-    if (inputs.pelotonEquipment > 0) {
-      const bonusPoints = Math.min(inputs.pelotonEquipment, 5000) * 9;
-      pelotonValue += bonusPoints * pointValueAvg;
-    }
-    if (pelotonValue > 0) {
-      breakdown.peloton = {
-        value: pelotonValue,
-        min: pelotonValue * 0.8,
-        max: pelotonValue * 1.2,
-        details: 'Peloton benefits'
-      };
-    }
-
-    const priorityPassValue = inputs.priorityPassVisits * 35;
-    if (priorityPassValue > 0) {
-      breakdown.priorityPass = {
-        value: priorityPassValue,
-        min: priorityPassValue * 0.5,
-        max: priorityPassValue * 1.5,
-        details: inputs.priorityPassVisits + ' lounge visits'
-      };
-    }
-
-    const globalEntryValue = inputs.globalEntryValue ? 24 : 0;
-    if (globalEntryValue > 0) {
-      breakdown.globalEntry = {
-        value: globalEntryValue,
-        min: globalEntryValue,
-        max: globalEntryValue,
-        details: 'Global Entry credit ($120 every 5 years)'
-      };
-    }
-
-    const appleServicesValue = inputs.appleServices ? (6.99 + 10.99) * 12 : 0;
-    if (appleServicesValue > 0) {
-      breakdown.appleServices = {
-        value: appleServicesValue,
-        min: appleServicesValue * 0.3,
-        max: appleServicesValue,
-        details: 'Apple TV+ and Apple Music'
-      };
-    }
-
-    let highSpenderValue = 0;
-    if (qualifiesForHighSpender) {
-      if (inputs.useShopsCredit) highSpenderValue += 250;
-      if (inputs.useSouthwestCredit) highSpenderValue += 500;
-      if (inputs.useIHGDiamond) highSpenderValue += 200;
-      if (inputs.useSouthwestAList) highSpenderValue += 150;
-    }
-    
-    if (highSpenderValue > 0) {
-      breakdown.highSpender = {
-        value: highSpenderValue,
-        min: highSpenderValue * 0.8,
-        max: highSpenderValue * 1.2,
-        details: 'High spender benefits: $' + highSpenderValue + ' selected'
-      };
-    }
-
-    const benefitValues = Object.values(breakdown);
-    totalValue = benefitValues.reduce((sum, benefit) => sum + benefit.value, 0);
-    minValue = benefitValues.reduce((sum, benefit) => sum + benefit.min, 0);
-    maxValue = benefitValues.reduce((sum, benefit) => sum + benefit.max, 0);
-
-    const roi = ((totalValue - 795) / 795) * 100;
-    const minROI = ((minValue - 795) / 795) * 100;
-    const maxROI = ((maxValue - 795) / 795) * 100;
-
-    setResults({
-      totalValue,
-      totalCost: 795,
-      roi,
-      minROI,
-      maxROI,
-      breakdown
-    });
-  };
-
+  // CRITICAL FIX: Side effects only in useEffect
   useEffect(() => {
-    calculateROI();
-  }, [inputs]);
-
-  const handleInputChange = (field, value) => {
-    if (['chaseTravel', 'flightsHotels', 'dining', 'otherSpending'].includes(field)) {
-      value = Number(value) || 0;
+    try {
+      const newResults = calculateROI();
+      setResults(newResults);
+    } catch (error) {
+      console.error('Failed to update results:', error);
+      setResults({
+        totalValue: 0,
+        totalCost: 795,
+        roi: -100,
+        minROI: -100,
+        maxROI: -100,
+        breakdown: {}
+      });
     }
-    
-    setInputs(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  }, [calculateROI]);
+
+  // PERFORMANCE + REACT COMPATIBILITY: Stable event handler
+  const handleInputChange = useCallback((field, value) => {
+    try {
+      if (['chaseTravel', 'flightsHotels', 'dining', 'otherSpending'].includes(field)) {
+        const numValue = Number(value);
+        value = isNaN(numValue) ? 0 : numValue;
+      }
+      
+      setInputs(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    } catch (error) {
+      console.error('Input change error:', error);
+    }
+  }, []);
 
   return (
-    <div className="min-h-screen bg-white font-mono">
+    <div className="min-h-screen" style={{ backgroundColor: '#F8F6F0' }}>
       {/* Header */}
-      <div className="border-b-8" style={{ borderColor: '#48D629' }}>
-        <div className="max-w-7xl mx-auto px-8 py-12">
-          <h1 className="text-6xl font-bold text-black mb-4">SAPPHIRE RESERVE</h1>
-          <h2 className="text-2xl text-black">ROI CALCULATOR</h2>
-          <div className="mt-8 p-4 bg-black text-white">
-            <p className="text-sm leading-relaxed">
-              EXISTING CARDHOLDERS ONLY / NO SIGN-UP BONUSES INCLUDED
-            </p>
+      <div className="relative" style={{ backgroundColor: '#C8512F' }}>
+        <div className="absolute top-0 left-0 w-0 h-0" 
+             style={{ 
+               borderLeft: '0px solid transparent', 
+               borderBottom: '0px solid transparent',
+               borderRight: '0px solid transparent',
+               borderTop: '0px solid transparent'
+             }}></div>
+        <div className="absolute top-0 right-0 w-0 h-0"
+             style={{ 
+               borderRight: '24px solid #8B5A3C', 
+               borderBottom: '24px solid transparent',
+               borderLeft: '0px solid transparent',
+               borderTop: '0px solid transparent'
+             }}></div>
+        
+        <div className="max-w-7xl mx-auto px-8 py-16 text-center relative">
+          <h1 className="text-6xl font-black text-white mb-4 tracking-tight" 
+              style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+            VALORETTI
+          </h1>
+          <h2 className="text-2xl font-bold text-white tracking-wider" 
+              style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+            SAPPHIRE RESERVE ROI CALCULATOR
+          </h2>
+          
+          {/* Disclaimer box */}
+          <div className="mt-8 inline-block px-8 py-4 bg-black text-white font-bold text-sm tracking-wide">
+            EXISTING CARDHOLDERS ONLY • NO SIGN-UP BONUSES INCLUDED
           </div>
         </div>
+        
+        {/* Bottom geometric strip */}
+        <div className="h-4 w-full" style={{ backgroundColor: '#E9C46A' }}></div>
       </div>
 
       <div className="max-w-7xl mx-auto p-8">
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           
-          {/* Input Column 1 */}
+          {/* Input Column 1 - Spending */}
           <div className="space-y-8">
-            {/* Spending Section */}
-            <div>
-              <div className="h-3 mb-6" style={{ backgroundColor: '#2948D6' }}></div>
-              <h3 className="text-xl font-bold text-black mb-6">ANNUAL SPENDING</h3>
+            {/* Divisumma-style curved profile container */}
+            <div className="relative" 
+                 style={{ 
+                   background: 'linear-gradient(135deg, #E9C46A 0%, #D4A574 50%, #E9C46A 100%)',
+                   borderRadius: STATIC_STYLES.borderRadius32,
+                   boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1)'
+                 }}>
               
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">CHASE TRAVEL (8X)</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.chaseTravel}
-                      onChange={(e) => handleInputChange('chaseTravel', e.target.value)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
+              <div className="p-8">
+                <h3 className="text-2xl font-black text-black mb-8 tracking-wide" 
+                    style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                  ANNUAL SPENDING
+                </h3>
+                
+                <div className="space-y-6">
+                  {[
+                    { key: 'chaseTravel', label: 'CHASE TRAVEL (8×)', color: '#8B5A3C', symbol: '$' },
+                    { key: 'flightsHotels', label: 'FLIGHTS & HOTELS (4×)', color: '#C8512F', symbol: '$' },
+                    { key: 'dining', label: 'DINING (3×)', color: '#E07A5F', symbol: '$' },
+                    { key: 'otherSpending', label: 'EVERYTHING ELSE (1×)', color: '#3D405B', symbol: '$' }
+                  ].map((item, index) => (
+                    <div key={item.key} className="relative">
+                      <label className="block text-sm font-black text-black mb-3 tracking-wide"
+                             style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        {item.label}
+                      </label>
+                      
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg border-4 border-white"
+                             style={{ backgroundColor: item.color }}>
+                          {item.symbol}
+                        </div>
+                        
+                        <input
+                          type="text"
+                          value={inputs[item.key]}
+                          onChange={(e) => handleInputChange(item.key, e.target.value)}
+                          className="flex-1 p-4 text-2xl font-black text-black border-4 transition-all duration-300 focus:outline-none focus:scale-105"
+                          style={{ 
+                            backgroundColor: '#F8F6F0',
+                            borderColor: '#3D405B',
+                            fontFamily: STATIC_STYLES.fontFamily,
+                            borderRadius: STATIC_STYLES.borderRadius24
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = item.color}
+                          onBlur={(e) => e.target.style.borderColor = '#3D405B'}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">FLIGHTS & HOTELS (4X)</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.flightsHotels}
-                      onChange={(e) => handleInputChange('flightsHotels', e.target.value)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
+                {/* Total display */}
+                <div className="mt-8 text-white p-6 rounded-3xl" style={{ backgroundColor: '#3D405B' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-3xl font-black" style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        ${totalAnnualSpending.toLocaleString()}
+                      </div>
+                      <div className="text-sm font-bold tracking-wide" style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        TOTAL ANNUAL SPENDING
+                      </div>
+                    </div>
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center border-4 border-white" 
+                         style={{ backgroundColor: '#C8512F' }}>
+                      <div className="text-white font-black text-xl">$</div>
+                    </div>
                   </div>
+                  {qualifiesForHighSpender && (
+                    <div className="mt-4 text-white p-3 font-black text-sm tracking-wider rounded-2xl" 
+                         style={{ backgroundColor: '#C8512F', fontFamily: STATIC_STYLES.fontFamily }}>
+                      ✓ HIGH SPENDER QUALIFIED
+                    </div>
+                  )}
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">DINING (3X)</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.dining}
-                      onChange={(e) => handleInputChange('dining', e.target.value)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">OTHER (1X)</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.otherSpending}
-                      onChange={(e) => handleInputChange('otherSpending', e.target.value)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-8 p-6 bg-black text-white">
-                <div className="text-2xl font-bold">${totalAnnualSpending.toLocaleString()}</div>
-                <div className="text-sm">TOTAL ANNUAL SPENDING</div>
-                {qualifiesForHighSpender && (
-                  <div className="mt-2 text-sm" style={{ color: '#48D629' }}>
-                    ✓ HIGH SPENDER QUALIFIED
-                  </div>
-                )}
               </div>
             </div>
 
             {/* High Spender Benefits */}
             {qualifiesForHighSpender && (
-              <div>
-                <div className="h-3 mb-6" style={{ backgroundColor: '#D62948' }}></div>
-                <h3 className="text-xl font-bold text-black mb-6">HIGH SPENDER BENEFITS</h3>
+              <div className="relative"
+                   style={{ 
+                     background: 'linear-gradient(135deg, #C8512F 0%, #B8472A 50%, #C8512F 100%)',
+                     borderRadius: STATIC_STYLES.borderRadius32,
+                     boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1)'
+                   }}>
                 
-                <div className="space-y-4">
-                  {[
-                    { key: 'useShopsCredit', label: '$250 SHOPS CREDIT', value: '$250' },
-                    { key: 'useSouthwestCredit', label: '$500 SOUTHWEST CREDIT', value: '$500' },
-                    { key: 'useIHGDiamond', label: 'IHG DIAMOND STATUS', value: '$200' },
-                    { key: 'useSouthwestAList', label: 'SOUTHWEST A-LIST', value: '$150' }
-                  ].map(benefit => (
-                    <div key={benefit.key} className="flex items-center justify-between p-4 border-2 border-black">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={inputs[benefit.key]}
-                          onChange={(e) => handleInputChange(benefit.key, e.target.checked)}
-                          className="w-5 h-5 mr-4"
-                          style={{ accentColor: '#D62948' }}
-                        />
-                        <span className="text-sm font-bold">{benefit.label}</span>
+                <div className="p-8">
+                  <h3 className="text-2xl font-black text-white mb-8 tracking-wide"
+                      style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                    HIGH SPENDER BENEFITS
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    {[
+                      { key: 'useShopsCredit', label: '$250 SHOPS CREDIT', value: '$250' },
+                      { key: 'useSouthwestCredit', label: '$500 SOUTHWEST CREDIT', value: '$500' },
+                      { key: 'useIHGDiamond', label: 'IHG DIAMOND STATUS', value: '$200' },
+                      { key: 'useSouthwestAList', label: 'SOUTHWEST A-LIST', value: '$150' }
+                    ].map(benefit => (
+                      <div key={benefit.key} 
+                           className="flex items-center justify-between p-4 cursor-pointer transition-all duration-300 hover:scale-105 rounded-3xl"
+                           style={{ backgroundColor: inputs[benefit.key] ? '#E9C46A' : '#F8F6F0' }}
+                           onClick={() => handleInputChange(benefit.key, !inputs[benefit.key])}>
+                        <div className="flex items-center">
+                          <div className="w-8 h-8 border-4 mr-4 transition-all rounded-lg"
+                               style={{ 
+                                 borderColor: '#3D405B',
+                                 backgroundColor: inputs[benefit.key] ? '#3D405B' : '#F8F6F0'
+                               }}>
+                            {inputs[benefit.key] && (
+                              <div className="w-full h-full scale-50 mt-1 ml-1 rounded-sm" style={{ backgroundColor: '#E9C46A' }}></div>
+                            )}
+                          </div>
+                          <span className="font-black text-black text-sm tracking-wide"
+                                style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                            {benefit.label}
+                          </span>
+                        </div>
+                        <span className="font-black text-black text-lg"
+                              style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                          {benefit.value}
+                        </span>
                       </div>
-                      <span className="text-sm font-bold">{benefit.value}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Input Column 2 */}
+          {/* Input Column 2 - Benefits */}
           <div className="space-y-8">
             {/* Travel Benefits */}
-            <div>
-              <div className="h-3 mb-6" style={{ backgroundColor: '#48D629' }}></div>
-              <h3 className="text-xl font-bold text-black mb-6">TRAVEL BENEFITS</h3>
+            <div className="relative"
+                 style={{ 
+                   background: 'linear-gradient(135deg, #E07A5F 0%, #D6704B 50%, #E07A5F 100%)',
+                   borderRadius: STATIC_STYLES.borderRadius32,
+                   boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1)'
+                 }}>
               
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">TRAVEL CREDIT</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.travelCreditUsage}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        handleInputChange('travelCreditUsage', Math.min(300, value));
-                      }}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="300"
-                    />
-                  </div>
-                  <div className="text-xs mt-1">MAX $300</div>
+              <div className="p-8">
+                <h3 className="text-2xl font-black text-white mb-8 tracking-wide"
+                    style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                  TRAVEL BENEFITS
+                </h3>
+                
+                <div className="space-y-6">
+                  {[
+                    { key: 'travelCreditUsage', label: 'TRAVEL CREDIT', max: 300, placeholder: '300', symbol: '$' },
+                    { key: 'diningCredit', label: 'DINING CREDIT', max: 300, placeholder: '300', symbol: '$' },
+                    { key: 'editStaysValue', label: 'EDIT STAYS', placeholder: '0', symbol: '$' },
+                    { key: 'stubhubSpending', label: 'STUBHUB', placeholder: '0', symbol: '$' },
+                    { key: 'priorityPassVisits', label: 'PRIORITY PASS VISITS', placeholder: '0', symbol: '#' }
+                  ].map((item, index) => (
+                    <div key={item.key}>
+                      <label className="block text-sm font-black text-white mb-3 tracking-wide"
+                             style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        {item.label}
+                      </label>
+                      
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-black font-black text-lg border-4 border-white"
+                             style={{ backgroundColor: '#E9C46A' }}>
+                          {item.symbol}
+                        </div>
+                        
+                        <input
+                          type="text"
+                          value={inputs[item.key]}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            handleInputChange(item.key, item.max ? Math.min(item.max, value) : value);
+                          }}
+                          className="flex-1 p-4 text-2xl font-black text-black border-4 transition-all duration-300 focus:outline-none focus:scale-105"
+                          style={{ 
+                            backgroundColor: '#F8F6F0',
+                            borderColor: '#3D405B',
+                            fontFamily: STATIC_STYLES.fontFamily,
+                            borderRadius: STATIC_STYLES.borderRadius24
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#E9C46A'}
+                          onBlur={(e) => e.target.style.borderColor = '#3D405B'}
+                          placeholder={item.placeholder}
+                        />
+                      </div>
+                      {item.max && <div className="text-xs mt-1 text-white font-bold"
+                                        style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        MAX ${item.max}
+                      </div>}
+                    </div>
+                  ))}
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">DINING CREDIT</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.diningCredit}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        handleInputChange('diningCredit', Math.min(300, value));
-                      }}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="300"
-                    />
+                {/* Global Entry Checkbox */}
+                <div className="mt-8 flex items-center p-4 cursor-pointer transition-all duration-300 hover:scale-105 rounded-3xl"
+                     style={{ backgroundColor: inputs.globalEntryValue ? '#E9C46A' : '#F8F6F0' }}
+                     onClick={() => handleInputChange('globalEntryValue', !inputs.globalEntryValue)}>
+                  <div className="w-8 h-8 border-4 mr-4 rounded-lg"
+                       style={{ 
+                         borderColor: '#3D405B',
+                         backgroundColor: inputs.globalEntryValue ? '#3D405B' : '#F8F6F0'
+                       }}>
+                    {inputs.globalEntryValue && (
+                      <div className="w-full h-full scale-50 mt-1 ml-1 rounded-sm" style={{ backgroundColor: '#E9C46A' }}></div>
+                    )}
                   </div>
-                  <div className="text-xs mt-1">MAX $300</div>
+                  <span className="font-black text-black tracking-wide"
+                        style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                    GLOBAL ENTRY CREDIT
+                  </span>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">EDIT STAYS</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.editStaysValue}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        handleInputChange('editStaysValue', value);
-                      }}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">STUBHUB</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.stubhubSpending}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        handleInputChange('stubhubSpending', value);
-                      }}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">PRIORITY PASS VISITS</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">#</div>
-                    <input
-                      type="text"
-                      value={inputs.priorityPassVisits}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        handleInputChange('priorityPassVisits', value);
-                      }}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 flex items-center p-4 border-2 border-black">
-                <input
-                  type="checkbox"
-                  checked={inputs.globalEntryValue}
-                  onChange={(e) => handleInputChange('globalEntryValue', e.target.checked)}
-                  className="w-5 h-5 mr-4"
-                  style={{ accentColor: '#48D629' }}
-                />
-                <span className="text-sm font-bold">GLOBAL ENTRY CREDIT</span>
               </div>
             </div>
 
             {/* Service Benefits */}
-            <div>
-              <div className="h-3 mb-6" style={{ backgroundColor: '#2948D6' }}></div>
-              <h3 className="text-xl font-bold text-black mb-6">SERVICES</h3>
+            <div className="relative"
+                 style={{ 
+                   background: 'linear-gradient(135deg, #3D405B 0%, #2F3142 50%, #3D405B 100%)',
+                   borderRadius: STATIC_STYLES.borderRadius32,
+                   boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1)'
+                 }}>
               
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">DASHPASS MONTHS</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">#</div>
-                    <input
-                      type="text"
-                      value={inputs.dashpassUsage}
-                      onChange={(e) => handleInputChange('dashpassUsage', Math.min(12, Number(e.target.value) || 0))}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="12"
-                    />
-                  </div>
-                  <div className="text-xs mt-1">MAX 12</div>
+              <div className="p-8">
+                <h3 className="text-2xl font-black text-white mb-8 tracking-wide"
+                    style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                  SERVICES
+                </h3>
+                
+                <div className="space-y-6">
+                  {[
+                    { key: 'dashpassUsage', label: 'DASHPASS MONTHS', max: 12, placeholder: '12', symbol: '#' },
+                    { key: 'lyftRides', label: 'LYFT RIDES/MONTH', placeholder: '0', symbol: '#' },
+                    { key: 'pelotonEquipment', label: 'PELOTON EQUIPMENT', placeholder: '0', symbol: '$' }
+                  ].map(item => (
+                    <div key={item.key}>
+                      <label className="block text-sm font-black text-white mb-3 tracking-wide"
+                             style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        {item.label}
+                      </label>
+                      
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg border-4 border-white"
+                             style={{ backgroundColor: '#C8512F' }}>
+                          {item.symbol}
+                        </div>
+                        
+                        <input
+                          type="text"
+                          value={inputs[item.key]}
+                          onChange={(e) => {
+                            const value = Number(e.target.value) || 0;
+                            handleInputChange(item.key, item.max ? Math.min(item.max, value) : value);
+                          }}
+                          className="flex-1 p-4 text-2xl font-black text-black border-4 transition-all duration-300 focus:outline-none focus:scale-105"
+                          style={{ 
+                            backgroundColor: '#F8F6F0',
+                            borderColor: '#F8F6F0',
+                            fontFamily: STATIC_STYLES.fontFamily,
+                            borderRadius: STATIC_STYLES.borderRadius24
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#E9C46A'}
+                          onBlur={(e) => e.target.style.borderColor = '#F8F6F0'}
+                          placeholder={item.placeholder}
+                        />
+                      </div>
+                      {item.max && <div className="text-xs mt-1 text-white font-bold"
+                                        style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                        MAX {item.max}
+                      </div>}
+                    </div>
+                  ))}
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">LYFT RIDES/MONTH</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">#</div>
-                    <input
-                      type="text"
-                      value={inputs.lyftRides}
-                      onChange={(e) => handleInputChange('lyftRides', Number(e.target.value) || 0)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
+                {/* Service checkboxes */}
+                <div className="mt-8 space-y-3">
+                  {[
+                    { key: 'restaurantOrders', label: '$5 DOORDASH RESTAURANT CREDIT', period: 'monthly' },
+                    { key: 'nonRestaurantOrders', label: '$20 DOORDASH NON-RESTAURANT CREDIT', period: 'monthly' },
+                    { key: 'pelotonMembership', label: '$120 PELOTON MEMBERSHIP', period: 'annual' },
+                    { key: 'appleServices', label: '$215 APPLE SERVICES', period: 'annual' }
+                  ].map(service => (
+                    <div key={service.key} 
+                         className="flex items-center justify-between p-4 cursor-pointer transition-all duration-300 hover:scale-105 rounded-3xl"
+                         style={{ backgroundColor: inputs[service.key] ? '#E9C46A' : '#F8F6F0' }}
+                         onClick={() => handleInputChange(service.key, !inputs[service.key])}>
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 border-4 mr-4 rounded-lg"
+                             style={{ 
+                               borderColor: '#3D405B',
+                               backgroundColor: inputs[service.key] ? '#3D405B' : '#F8F6F0'
+                             }}>
+                          {inputs[service.key] && (
+                            <div className="w-full h-full scale-50 mt-1 ml-1 rounded-sm" style={{ backgroundColor: '#E9C46A' }}></div>
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-black text-black text-sm tracking-wide block"
+                                style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                            {service.label}
+                          </span>
+                          <span className="text-xs text-black font-bold opacity-75"
+                                style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                            {service.period}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-black mb-2">PELOTON EQUIPMENT</label>
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 w-12 h-full bg-black text-white flex items-center justify-center text-xl font-bold">$</div>
-                    <input
-                      type="text"
-                      value={inputs.pelotonEquipment}
-                      onChange={(e) => handleInputChange('pelotonEquipment', Number(e.target.value) || 0)}
-                      className="w-full pl-16 pr-4 py-4 text-xl font-bold bg-white border-2 border-black focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 space-y-4">
-                {[
-                  { key: 'restaurantOrders', label: '$5 DOORDASH RESTAURANT CREDIT' },
-                  { key: 'nonRestaurantOrders', label: '$20 DOORDASH NON-RESTAURANT CREDIT' },
-                  { key: 'pelotonMembership', label: '$120 PELOTON MEMBERSHIP' },
-                  { key: 'appleServices', label: '$215 APPLE SERVICES' }
-                ].map(service => (
-                  <div key={service.key} className="flex items-center p-4 border-2 border-black">
-                    <input
-                      type="checkbox"
-                      checked={inputs[service.key]}
-                      onChange={(e) => handleInputChange(service.key, e.target.checked)}
-                      className="w-5 h-5 mr-4"
-                      style={{ accentColor: '#2948D6' }}
-                    />
-                    <span className="text-sm font-bold">{service.label}</span>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -535,55 +705,125 @@ const SapphireReserveROICalculator = () => {
           {/* Results Column */}
           <div className="space-y-8">
             {/* ROI Analysis */}
-            <div>
-              <div className="h-3 mb-6" style={{ backgroundColor: '#D62948' }}></div>
-              <h3 className="text-xl font-bold text-black mb-6">ROI ANALYSIS</h3>
+            <div className="relative"
+                 style={{ 
+                   background: 'linear-gradient(135deg, #3D405B 0%, #2F3142 50%, #3D405B 100%)',
+                   borderRadius: STATIC_STYLES.borderRadius32,
+                   boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1)'
+                 }}>
               
-              <div className="bg-black text-white p-8 mb-8">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center border-b border-white pb-2">
-                    <span>ANNUAL FEE</span>
-                    <span className="text-xl font-bold">-$795</span>
+              <div className="p-8">
+                <h3 className="text-2xl font-black text-white mb-8 text-center tracking-wide"
+                    style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                  ROI ANALYSIS
+                </h3>
+                
+                <div className="space-y-4 mb-8">
+                  <div className="flex justify-between items-center py-3 border-b-4 border-white rounded-lg">
+                    <span className="text-white font-bold tracking-wide"
+                          style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                      ANNUAL FEE
+                    </span>
+                    <span className="text-2xl font-black text-white"
+                          style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                      -$795
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center border-b border-white pb-2">
-                    <span>BENEFIT VALUE</span>
-                    <span className="text-xl font-bold">${results.totalValue.toFixed(0)}</span>
+                  <div className="flex justify-between items-center py-3 border-b-4 border-white rounded-lg">
+                    <span className="text-white font-bold tracking-wide"
+                          style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                      BENEFIT VALUE
+                    </span>
+                    <span className="text-2xl font-black text-white"
+                          style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                      ${results.totalValue.toFixed(0)}
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center border-b border-white pb-4">
-                    <span>NET VALUE</span>
-                    <span className={`text-xl font-bold ${results.totalValue - 795 > 0 ? 'text-white' : 'text-red-400'}`}>
+                  <div className="flex justify-between items-center py-3 border-b-4 rounded-lg" 
+                       style={{ borderColor: '#E9C46A' }}>
+                    <span className="text-white font-bold tracking-wide"
+                          style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                      NET VALUE
+                    </span>
+                    <span className="text-2xl font-black"
+                          style={{ 
+                            color: results.totalValue - 795 > 0 ? '#E9C46A' : '#E07A5F',
+                            fontFamily: STATIC_STYLES.fontFamily
+                          }}>
                       ${(results.totalValue - 795).toFixed(0)}
                     </span>
                   </div>
-                  <div className="text-center pt-4">
-                    <div className="text-sm mb-2">RETURN ON INVESTMENT</div>
-                    <div className="text-5xl font-bold" style={{ color: results.roi > 0 ? '#48D629' : '#D62948' }}>
-                      {results.roi.toFixed(1)}%
-                    </div>
-                    <div className="text-xs mt-2">
-                      RANGE: {results.minROI.toFixed(1)}% TO {results.maxROI.toFixed(1)}%
-                    </div>
+                </div>
+                
+                {/* ROI Display */}
+                <div className="text-center p-8 rounded-3xl" style={{ backgroundColor: '#E9C46A' }}>
+                  <div className="text-black font-black text-sm tracking-wider mb-2"
+                       style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                    RETURN ON INVESTMENT
+                  </div>
+                  <div className="text-6xl font-black text-black mb-2"
+                       style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                    {results.roi.toFixed(1)}%
+                  </div>
+                  <div className="text-xs text-black font-bold"
+                       style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                    RANGE: {results.minROI.toFixed(1)}% TO {results.maxROI.toFixed(1)}%
+                  </div>
+                  
+                  {/* Geometric accent */}
+                  <div className="mt-4 flex justify-center space-x-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3D405B' }}></div>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#C8512F' }}></div>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3D405B' }}></div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Benefit Breakdown */}
-            <div>
-              <h3 className="text-xl font-bold text-black mb-6">BREAKDOWN</h3>
-              <div className="space-y-2">
-                {Object.entries(results.breakdown).map(([key, benefit]) => (
-                  <div key={key} className={`flex justify-between items-center p-3 ${key === 'highSpender' ? 'bg-black text-white' : 'border border-black'}`}>
-                    <div>
-                      <div className="font-bold text-sm">
-                        {key === 'highSpender' ? 'HIGH SPENDER' : key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+            <div className="border-8 rounded-3xl" style={{ backgroundColor: '#F8F6F0', borderColor: '#3D405B' }}>
+              <div className="p-4 rounded-t-3xl" style={{ backgroundColor: '#E9C46A' }}>
+                <h3 className="text-2xl font-black text-black text-center tracking-wide"
+                    style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                  BREAKDOWN
+                </h3>
+              </div>
+              
+              <div className="p-6 space-y-3">
+                {Object.entries(results.breakdown).map(([key, benefit], index) => (
+                  <div key={key} className="p-4 border-4 rounded-2xl"
+                       style={{ 
+                         borderColor: key === 'highSpender' ? '#C8512F' : '#3D405B',
+                         backgroundColor: key === 'highSpender' ? '#C8512F' : '#F8F6F0'
+                       }}>
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center flex-1">
+                        <div className="w-6 h-6 mr-4 rounded-full"
+                             style={{ 
+                               backgroundColor: key === 'highSpender' ? '#E9C46A' : 
+                                              index % 3 === 0 ? '#E9C46A' : 
+                                              index % 3 === 1 ? '#C8512F' : '#E07A5F'
+                             }}></div>
+                        <div>
+                          <div className={`font-black text-sm tracking-wide ${key === 'highSpender' ? 'text-white' : 'text-black'}`}
+                               style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                            {key === 'highSpender' ? 'HIGH SPENDER' : key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+                          </div>
+                          <div className={`text-xs mt-1 ${key === 'highSpender' ? 'text-white' : 'text-black'}`}
+                               style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                            {benefit.details}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs opacity-75">{benefit.details}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">${benefit.value.toFixed(0)}</div>
-                      <div className="text-xs opacity-75">
-                        ${benefit.min.toFixed(0)}-${benefit.max.toFixed(0)}
+                      <div className="text-right ml-4">
+                        <div className={`font-black text-lg ${key === 'highSpender' ? 'text-white' : 'text-black'}`}
+                             style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                          ${benefit.value.toFixed(0)}
+                        </div>
+                        <div className={`text-xs ${key === 'highSpender' ? 'text-white' : 'text-black'}`}
+                             style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                          ${benefit.min.toFixed(0)}-${benefit.max.toFixed(0)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -592,39 +832,52 @@ const SapphireReserveROICalculator = () => {
             </div>
 
             {/* Recommendation */}
-            <div className="mt-8">
-              {results.roi > 0 ? (
-                <div className="p-8 text-center" style={{ backgroundColor: '#48D629' }}>
-                  <div className="text-3xl font-bold text-black mb-4">RECOMMENDED</div>
-                  <div className="text-lg font-bold text-black">
-                    POSITIVE ROI: KEEP THE CARD
-                  </div>
-                  <div className="text-sm text-black mt-2">
-                    NET BENEFIT: ${(results.totalValue - 795).toFixed(0)}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-8 text-center" style={{ backgroundColor: '#D62948' }}>
-                  <div className="text-3xl font-bold text-white mb-4">NOT RECOMMENDED</div>
-                  <div className="text-lg font-bold text-white">
-                    NEGATIVE ROI: CONSIDER ALTERNATIVES
-                  </div>
-                  <div className="text-sm text-white mt-2">
-                    NET LOSS: ${Math.abs(results.totalValue - 795).toFixed(0)}
-                  </div>
-                </div>
-              )}
+            <div className="p-8 text-center border-8 rounded-3xl"
+                 style={{ 
+                   backgroundColor: results.roi > 0 ? '#E9C46A' : '#C8512F',
+                   borderColor: '#3D405B'
+                 }}>
+              <div className="text-4xl font-black text-black mb-4 tracking-wide"
+                   style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                {results.roi > 0 ? 'RECOMMENDED' : 'NOT RECOMMENDED'}
+              </div>
+              <div className={`text-lg font-black mb-2 tracking-wide ${results.roi > 0 ? 'text-black' : 'text-white'}`}
+                   style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                {results.roi > 0 ? 'POSITIVE ROI: KEEP THE CARD' : 'NEGATIVE ROI: CONSIDER ALTERNATIVES'}
+              </div>
+              <div className={`text-sm font-bold ${results.roi > 0 ? 'text-black' : 'text-white'}`}
+                   style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                NET {results.roi > 0 ? 'BENEFIT' : 'LOSS'}: ${Math.abs(results.totalValue - 795).toFixed(0)}
+              </div>
+              
+              {/* Geometric pattern */}
+              <div className="mt-6 flex justify-center space-x-1">
+                {[...Array(7)].map((_, i) => (
+                  <div key={i} className="w-2 h-8 rounded-full"
+                       style={{ 
+                         backgroundColor: i % 2 === 0 ? '#3D405B' : 
+                                         results.roi > 0 ? '#3D405B' : '#E9C46A'
+                       }}></div>
+                ))}
+              </div>
             </div>
 
             {/* Analysis Notes */}
-            <div className="mt-8 p-6 bg-black text-white">
-              <h4 className="font-bold mb-3">NOTES</h4>
-              <div className="text-xs space-y-1 leading-relaxed">
+            <div className="p-6 border-4 rounded-3xl relative" style={{ backgroundColor: '#3D405B', borderColor: '#E9C46A' }}>
+              <h4 className="font-black mb-4 text-white text-lg tracking-wide"
+                  style={{ fontFamily: STATIC_STYLES.fontFamily }}>
+                NOTES
+              </h4>
+              <div className="text-sm space-y-2 text-white font-bold"
+                   style={{ fontFamily: STATIC_STYLES.fontFamily }}>
                 <div>• EXISTING CARDHOLDERS ONLY</div>
                 <div>• POINT VALUES: 1.5-2.0¢ VIA CHASE TRAVEL</div>
                 <div>• HIGH SPENDER: $75K+ ANNUAL SPENDING</div>
                 <div>• ACTUAL VALUE VARIES BY USAGE</div>
               </div>
+              
+              {/* Corner accent */}
+              <div className="absolute bottom-4 right-4 w-4 h-4 rounded-full" style={{ backgroundColor: '#E9C46A' }}></div>
             </div>
           </div>
         </div>
