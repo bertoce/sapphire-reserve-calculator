@@ -369,7 +369,7 @@ const SapphireReserveROICalculator = () => {
           </h1>
           <h2 className="text-2xl font-bold text-white tracking-wider" 
               style={{ fontFamily: STATIC_STYLES.fontFamily }}>
-            SAPPHIRE RESERVE ROI CALCULATOR
+            SAPPHIRE RESERVE ROI CALCULATOR TEST
           </h2>
           
           {/* Disclaimer box */}
